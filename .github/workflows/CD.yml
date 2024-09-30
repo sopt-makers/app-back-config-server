@@ -50,7 +50,7 @@ jobs:
       - name: Docker Image Build and Push
         run: |
           docker build --platform linux/amd64 -t sopt-app/config-server .
-          docker push sopt-app/config-server
+          docker push ${{ secrets.DOCKER_LOGIN_USERNAME }}/config-server
 
   cd:
     needs: ci
