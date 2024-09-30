@@ -1,0 +1,69 @@
+name: CICD
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  ci:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'corretto'
+          java-version: '21'
+
+      - name: Gradle Cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/build.gradle') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Create application.yml
+        run: |
+          mkdir -p src/main/resources && cd $_
+          touch ./application.yml
+          echo "${{ secrets.CD_APPLICATION }}" > ./application.yml
+          cat ./application.yml
+
+        working-directory: ${{ env.working-directory }}
+      - name: Build with Gradle
+        run: |
+          chmod +x gradlew
+          ./gradlew clean build -x test --parallel --build-cache --daemon
+        shell: bash
+
+      - name: Docker Login
+        uses: docker/login-action@v2.2.0
+        with:
+          username: ${{ secrets.DOCKER_LOGIN_USERNAME }}
+          password: ${{ secrets.DOCKER_LOGIN_ACCESSTOKEN }}
+
+      - name: Docker Image Build and Push
+        run: |
+          docker build --platform linux/amd64 -t sopt-app/config-server .
+          docker push sopt-app/config-server
+
+  cd:
+    needs: ci
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_KEY }}
+          script: |
+            cd ~
+            ./deploy_config.sh
+            docker image prune -f
